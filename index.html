@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>恢復本經文擷取</title>
+<style>
+  :root {
+    --bg: #f7f6f2; --panel: #ffffff; --ink: #1f2328; --muted: #656d76; --line: #d8d6cf;
+    --accent: #2f6f5e; --accent-ink: #ffffff; --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16181a; --panel: #1f2225; --ink: #e6e6e3; --muted: #9aa0a6; --line: #343a3f;
+      --accent: #5fb89f; --accent-ink: #0d1512; --ok: #56d364; --warn: #e3b341; --err: #ff7b72;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 system-ui, -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: .9rem; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px; margin-bottom: 16px; }
+  h2 { font-size: 1rem; margin: 0 0 10px; }
+  label { display: block; font-size: .85rem; color: var(--muted); margin: 10px 0 4px; }
+  textarea, input[type=text], input[type=number] { width: 100%; padding: 8px 10px; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  textarea { min-height: 180px; resize: vertical; }
+  textarea.mono, .log { font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .row > * { flex: 0 0 auto; }
+  .grow { flex: 1 1 200px !important; }
+  button { padding: 8px 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--ink); font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible, select:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; }
+  details { margin-top: 12px; }
+  summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+  .hint { color: var(--muted); font-size: .82rem; margin: 6px 0 0; }
+  progress { width: 100%; height: 12px; accent-color: var(--accent); }
+  .stat { display: flex; justify-content: space-between; color: var(--muted); font-size: .85rem; margin-top: 4px; }
+  .log { height: 260px; overflow: auto; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; word-break: break-all; }
+  .log .ok { color: var(--ok); } .log .warn { color: var(--warn); } .log .err { color: var(--err); }
+  .log .dim { color: var(--muted); }
+  select { padding: 7px 8px; background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; font: inherit; }
+  .chk { display: inline-flex; gap: 6px; align-items: center; font-size: .9rem; color: var(--ink); margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>恢復本經文擷取</h1>
+  <p class="sub">貼上含經文出處的大綱文字，自動找出每一節，到恢復本網站逐節擷取，並即時顯示進度與結果。</p>
+
+  <section>
+    <h2>1. 貼上文字</h2>
+    <textarea id="input" placeholder="例如：讀經：創二二1～18，來十一17～19，羅四17" spellcheck="false"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="btnParse">解析預覽（不連線）</button>
+      <label class="chk"><input type="checkbox" id="dedupe" checked> 同一節只擷取一次</label>
+    </div>
+
+    <details>
+      <summary>連線設定（一般不用改）</summary>
+      <label for="mode">取得方式</label>
+      <select id="mode">
+        <option value="auto">自動：讀取網站首頁的查詢表單</option>
+        <option value="template">自訂：使用查詢網址樣板</option>
+      </select>
+      <label for="site">網站網址</label>
+      <input type="text" id="site" value="https://recoveryversion.twgbr.org/">
+      <div id="tplBox" hidden>
+        <label for="tpl">查詢網址樣板（可用 {book} 全名、{abbr} 簡寫、{chapter}、{verse}）</label>
+        <input type="text" id="tpl" placeholder="https://example.com/verse?b={abbr}&c={chapter}&v={verse}">
+      </div>
+      <label for="proxy">代理網址前綴（選填，會把目標網址編碼後接在後面）</label>
+      <input type="text" id="proxy" placeholder="https://your-worker.workers.dev/?url=">
+      <label for="delay">每節間隔（毫秒）</label>
+      <input type="number" id="delay" value="300" min="0" step="100">
+      <p class="hint">瀏覽器預設不允許網頁讀取其他網站，除非對方網站開放。按「測試連線」可以先確認這個網站能不能被讀取。</p>
+      <div class="row" style="margin-top:10px"><button id="btnTest">測試連線</button></div>
+    </details>
+  </section>
+
+  <section>
+    <h2>2. 擷取</h2>
+    <div class="row">
+      <button id="btnStart" class="primary">開始擷取</button>
+      <button id="btnStop" disabled>停止</button>
+    </div>
+    <div style="margin-top:12px">
+      <progress id="bar" value="0" max="1"></progress>
+      <div class="stat"><span id="statLeft">尚未開始</span><span id="statRight"></span></div>
+    </div>
+    <label>執行過程</label>
+    <div id="log" class="log" role="log" aria-live="polite"></div>
+  </section>
+
+  <section>
+    <h2>3. 結果</h2>
+    <textarea id="result" class="mono" readonly placeholder="擷取到的經文會即時出現在這裡"></textarea>
+    <label for="fname">存檔檔名（預設：文字前 10 個字＋_經文擷取.txt）</label>
+    <div class="row">
+      <input type="text" id="fname" class="grow">
+      <button id="btnDownload" disabled>下載 .txt</button>
+      <button id="btnCopy" disabled>複製全部</button>
+    </div>
+  </section>
+</main>
+
+<script src="parser.js"></script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const { ERR_SOURCE, ERR_SCRAPE } = RV;
+
+let running = false, stopFlag = false, nameDirty = false;
+const outLines = [];
+
+// ---------- 介面小工具 ----------
+function log(msg, cls) {
+  const box = $("log");
+  const d = document.createElement("div");
+  if (cls) d.className = cls;
+  d.textContent = msg;
+  box.appendChild(d);
+  while (box.childElementCount > 3000) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function setRunning(on) {
+  running = on;
+  $("btnStart").disabled = on; $("btnStop").disabled = !on;
+  $("btnParse").disabled = on; $("btnTest").disabled = on; $("input").disabled = on;
+}
+function refreshOutputButtons() {
+  const has = outLines.length > 0;
+  $("btnDownload").disabled = !has; $("btnCopy").disabled = !has;
+}
+function refreshName() {
+  if (!nameDirty) $("fname").value = RV.makeOutputName($("input").value);
+}
+function getRefs() {
+  let refs = RV.parseOutline($("input").value);
+  if ($("dedupe").checked) refs = RV.dedupe(refs);
+  return refs;
+}
+function addResult(line) {
+  outLines.push(line);
+  const ta = $("result");
+  ta.value = outLines.join("\n") + "\n";
+  ta.scrollTop = ta.scrollHeight;
+  refreshOutputButtons();
+}
+
+// ---------- 連線 ----------
+async function fetchText(url, init) {
+  const proxy = $("proxy").value.trim();
+  const target = proxy ? proxy + encodeURIComponent(url) : url;
+  const res = await fetch(target, init);
+  if (!res.ok) { const e = new Error("HTTP " + res.status); e.http = res.status; throw e; }
+  return res.text();
+}
+const isNetworkError = (e) => e instanceof TypeError;
+function explain(e) {
+  if (isNetworkError(e)) {
+    return "瀏覽器無法讀取該網站。最常見的原因是網站沒有開放跨網站讀取（CORS），也可能是網路中斷。" +
+           "可在「連線設定」填入代理網址，或改用在網站頁面內執行的版本。";
+  }
+  return e.message || String(e);
+}
+const parseHtml = (html) => new DOMParser().parseFromString(html, "text/html");
+
+// 自動模式：讀首頁，找出和 Python 版相同的下拉選單與表單
+async function discover(site) {
+  const doc = parseHtml(await fetchText(site));
+  const vol = doc.querySelector("select.sel-volume");
+  const chap = doc.querySelector("select.sel-chapter");
+  const ver = doc.querySelector("select.sel-verse");
+  if (!vol || !chap || !ver) {
+    throw new Error("首頁裡找不到 select.sel-volume / sel-chapter / sel-verse。網站的下拉選單可能是用 JavaScript 動態產生，無法單靠讀取網頁取得。");
+  }
+  const form = vol.closest("form");
+  if (!form) {
+    throw new Error("下拉選單不在 <form> 內，無法組出查詢請求。請改用「自訂」模式，填入從瀏覽器開發者工具（Network 分頁）看到的查詢網址。");
+  }
+  return { form, vol, chap, ver, go: doc.querySelector("input.go"), site };
+}
+
+function buildRequest(d, ref) {
+  const optVal = (sel, text) => {
+    const o = [...sel.options].find((o) => o.textContent.trim() === text);
+    return o ? o.value : text;
+  };
+  const params = new URLSearchParams();
+  for (const el of d.form.elements) {
+    if (!el.name) continue;
+    if (el === d.vol) params.set(el.name, optVal(el, ref.book));
+    else if (el === d.chap) params.set(el.name, optVal(el, String(ref.chapter)));
+    else if (el === d.ver) params.set(el.name, optVal(el, String(ref.verse)));
+    else if (["submit", "button", "image", "reset"].includes(el.type)) { if (el === d.go) params.set(el.name, el.value); }
+    else if (el.type === "checkbox" || el.type === "radio") { if (el.checked) params.set(el.name, el.value); }
+    else params.set(el.name, el.value);
+  }
+  const method = (d.form.getAttribute("method") || "get").toLowerCase();
+  const action = new URL(d.form.getAttribute("action") || "", d.site).href;
+  if (method === "post") {
+    return { url: action, init: { method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: params.toString() } };
+  }
+  return { url: action + (action.includes("?") ? "&" : "?") + params.toString(), init: undefined };
+}
+
+function templateUrl(tpl, ref) {
+  const vals = { book: ref.book, abbr: ref.abbr,
+                 chapter: ref.chapter, verse: ref.verse };
+  return tpl.replace(/\{(book|abbr|chapter|verse)\}/g, (_, k) => encodeURIComponent(vals[k]));
+}
+
+// 從回應的 HTML 取出指定節（做法與 Python 版相同）
+function extractVerse(html, ref) {
+  const doc = parseHtml(html);
+  let text = "";
+  const node = doc.getElementById("verse-" + ref.verse);
+  if (node) text = (node.closest("div.v-row, div.row") || node).textContent;
+  if (!text.trim()) {
+    const re = new RegExp("^" + ref.chapter + "[:：]" + ref.verse + "(?!\\d)");
+    for (const ln of (doc.body ? doc.body.textContent : "").split("\n")) {
+      if (re.test(ln.trim())) { text = ln.trim(); break; }
+    }
+  }
+  return text.trim() ? RV.cleanVerseText(text) : "";
+}
+
+// ---------- 動作 ----------
+function doParse() {
+  const refs = getRefs();
+  if (!refs.length) { log("❌ 未能解析到任何經文格式。", "err"); return null; }
+  const bad = refs.filter((r) => r.verse === null).length;
+  log(`解析到 ${refs.length} 節（其中 ${bad} 個出處有誤）`, bad ? "warn" : "ok");
+  return refs;
+}
+
+function previewParse() {
+  const refs = doParse();
+  if (!refs) return;
+  log(refs.map((r) => (r.verse === null ? r.tag + "  ← " + ERR_SOURCE : r.tag)).join("、"), "dim");
+}
+
+async function testConnection() {
+  const site = $("site").value.trim();
+  log(`連線測試：${site}`);
+  try {
+    const d = await discover(site);
+    const names = [...d.form.elements].filter((e) => e.name).map((e) => e.name).join("、");
+    log(`✔ 可以讀取網站，並找到查詢表單（method=${d.form.getAttribute("method") || "get"}，欄位：${names}）`, "ok");
+  } catch (e) {
+    log("⚠️ " + explain(e), "err");
+  }
+}
+
+async function start() {
+  if (running) return;
+  const refs = doParse();
+  if (!refs) return;
+
+  outLines.length = 0; $("result").value = ""; refreshOutputButtons();
+  setRunning(true); stopFlag = false;
+  const total = refs.length, delay = Math.max(0, +$("delay").value || 0);
+  const mode = $("mode").value, site = $("site").value.trim(), tpl = $("tpl").value.trim();
+  $("bar").max = total; $("bar").value = 0;
+  let done = 0, okCount = 0, errCount = 0, aborted = false;
+  const upd = () => {
+    $("bar").value = done;
+    $("statLeft").textContent = `${done} / ${total}`;
+    $("statRight").textContent = `成功 ${okCount}　有誤 ${errCount}`;
+  };
+  upd();
+
+  try {
+    let d = null;
+    if (mode === "auto") {
+      log("讀取網站首頁…");
+      d = await discover(site);
+      log("✔ 已找到查詢表單", "ok");
+    } else if (!tpl) {
+      throw new Error("請先填入查詢網址樣板。");
+    }
+
+    const cache = new Map();
+    for (const ref of refs) {
+      if (stopFlag) { log("已停止。", "warn"); aborted = true; break; }
+      const prefix = `[${done + 1}/${total}] ${ref.tag}`;
+
+      if (ref.verse === null) {
+        addResult(`${ref.tag} ${ERR_SOURCE}`); errCount++;
+        log(`⚠️ ${prefix} → ${ERR_SOURCE}`, "warn");
+        done++; upd(); continue;
+      }
+
+      let text = cache.get(ref.tag);
+      if (text === undefined) {
+        log(`${prefix} 查詢中…`, "dim");
+        try {
+          let html;
+          if (mode === "auto") { const r = buildRequest(d, ref); html = await fetchText(r.url, r.init); }
+          else html = await fetchText(templateUrl(tpl, ref));
+          text = extractVerse(html, ref);
+        } catch (e) {
+          if (isNetworkError(e)) throw e;   // 連線層級失敗：整個中止，避免產生一堆假的「出處有誤」
+          text = null;                      // 網站回應錯誤：視為查無此節
+        }
+        cache.set(ref.tag, text);
+        if (delay) await sleep(delay);
+      }
+
+      if (text === null) { addResult(`${ref.tag} ${ERR_SOURCE}`); errCount++; log(`⚠️ ${prefix} → 網站查無此節`, "warn"); }
+      else if (!text) { addResult(`${ref.tag} ${ERR_SCRAPE}`); errCount++; log(`⚠️ ${prefix} → ${ERR_SCRAPE}`, "warn"); }
+      else { addResult(`${ref.tag} ${text}`); okCount++; log(`✔ ${prefix}`, "ok"); }
+      done++; upd();
+    }
+    if (!aborted) log(`✅ 完成：成功 ${okCount} 節，有誤 ${errCount} 節。可以下載結果。`, "ok");
+  } catch (e) {
+    log("⚠️ 已中止：" + explain(e), "err");
+  } finally {
+    setRunning(false);
+  }
+}
+
+function download() {
+  const name = ($("fname").value.trim() || RV.makeOutputName($("input").value)).replace(/[\\/:*?"<>|]/g, "");
+  const blob = new Blob([outLines.join("\n") + "\n"], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  log(`已下載：${name}`, "ok");
+}
+
+async function copyAll() {
+  const text = outLines.join("\n") + "\n";
+  try { await navigator.clipboard.writeText(text); log("已複製全部結果。", "ok"); }
+  catch { $("result").select(); document.execCommand("copy"); log("已複製全部結果。", "ok"); }
+}
+
+// ---------- 事件 ----------
+$("input").addEventListener("input", refreshName);
+$("fname").addEventListener("input", () => { nameDirty = true; });
+$("mode").addEventListener("change", () => { $("tplBox").hidden = $("mode").value !== "template"; });
+$("btnParse").addEventListener("click", previewParse);
+$("btnTest").addEventListener("click", testConnection);
+$("btnStart").addEventListener("click", start);
+$("btnStop").addEventListener("click", () => { stopFlag = true; });
+$("btnDownload").addEventListener("click", download);
+$("btnCopy").addEventListener("click", copyAll);
+refreshName();
+</script>
+</body>
+</html>
